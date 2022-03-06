@@ -10,6 +10,7 @@ use windows::{
 };
 
 use crate::utils::{rgb, str_to_pcwstr, GET_X_LPARAM, GET_Y_LPARAM};
+use crate::render::State;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 use std::ffi::c_void;
@@ -22,13 +23,31 @@ const BGCOLOUR: u32 = rgb(52, 55, 60);
 /// Required until I figure out how to handle multiple windows
 static REGISTER_WINDOW_CLASS: Once = Once::new();
 
-pub struct Window {
-    instance: HINSTANCE,
-    handle: HWND,
+pub enum Event {
+    Resize,
+    KeyDown,
+    Paint,
 }
 
-impl Window {
-    pub fn new(title: &str, window_class_name: &str) -> Result<Box<Self>> {
+pub trait Application {
+
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct Window<T: Application> {
+    application: T,
+    instance: HINSTANCE,
+    handle: HWND,
+    pub info: Option<String>
+}
+
+impl <T: Application> Window<T> {
+    fn check_reference(&self) -> bool{
+        true
+    }
+
+    pub fn new(title: &str, window_class_name: &str, app: T) -> Result<Box<Self>> {
         let hinstance = unsafe { GetModuleHandleW(None).ok() }?;
         // println!("hinstance = {}", &hinstance.0);
 
@@ -48,9 +67,13 @@ impl Window {
         });
 
         let mut window = Box::new(Self {
+            application: app,
             instance: hinstance,
             handle: HWND(0),
+            info: None
         });
+
+        // println!("RawPtr: {}", &mut window as *mut c_void as u32);
 
         let hwnd = unsafe {
             CreateWindowExW(
@@ -67,7 +90,8 @@ impl Window {
                 hinstance,
                 // mutable reference to raw pointer where we let the compiler work out the type '_'
                 // we then cast this raw pointer to *const c_void type `_` as is required
-                &mut window as *mut _ as _,
+                // &mut window as *mut _ as *mut c_void,
+                window.as_mut() as *mut _ as _,
             )
             .ok()?
         };
@@ -79,7 +103,46 @@ impl Window {
         } else {
             window.handle = hwnd;
         }
+
         Ok(window)
+    }
+
+    unsafe fn event_handler(
+        &mut self,
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        match message {
+                WM_NCCALCSIZE => {
+                    // Stop this msg passing to the default procedure as it screws up borderless
+                    LRESULT(0)
+                }
+                WM_PAINT => {
+                    // println!("WM_PAINT");
+                    ValidateRect(hwnd, std::ptr::null());
+                    LRESULT(0)
+                }
+                WM_NCHITTEST => Region::hit_test(
+                    hwnd,
+                    POINT {
+                        x: GET_X_LPARAM(lparam.0 as u32),
+                        y: GET_Y_LPARAM(lparam.0 as u32),
+                    },
+                ),
+                WM_DESTROY => {
+                    println!("WM_DESTROY");
+                    PostQuitMessage(0);
+                    LRESULT(0)
+                }
+                // WM_SIZE => {
+                //     println!("WM_SIZE");
+                //     PostMessageW(hwnd, WM_SIZE, wparam, lparam);
+                //     LRESULT(0)
+                // }
+                _ => LRESULT(0)
+        }
     }
 
     unsafe extern "system" fn wndproc(
@@ -88,46 +151,32 @@ impl Window {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        match message as u32 {
-            WM_NCCALCSIZE => {
-                // Stop this msg passing to the default procedure as it screws up borderless
-                LRESULT(0)
+        // println!("Message: {}", message as u32);
+        if message as u32 == WM_NCCREATE | WM_CREATE {
+            let margins = MARGINS {
+                cxLeftWidth: 1,
+                cxRightWidth: 1,
+                cyTopHeight: 1,
+                cyBottomHeight: 1,
+            };
+            DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
+            let cs = lparam.0 as *const CREATESTRUCTW;
+            let this = (*cs).lpCreateParams as *mut Self;
+            // assert_ne!(this, 0)
+            (*this).handle = hwnd;
+
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, this as _);
+        } else {
+            let this = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self;
+            if let Some(this) = this.as_mut(){
+                return this.event_handler(hwnd, message, wparam, lparam);
             }
-            WM_CREATE => {
-                let margins = MARGINS {
-                    cxLeftWidth: 1,
-                    cxRightWidth: 1,
-                    cyTopHeight: 1,
-                    cyBottomHeight: 1,
-                };
-                DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
-                println!("WM_CREATE");
-                LRESULT(0)
-            }
-            WM_PAINT => {
-                println!("WM_PAINT");
-                ValidateRect(hwnd, std::ptr::null());
-                LRESULT(0)
-            }
-            WM_DESTROY => {
-                println!("WM_DESTROY");
-                PostQuitMessage(0);
-                LRESULT(0)
-            }
-            WM_NCHITTEST => Region::hit_test(
-                hwnd,
-                POINT {
-                    x: GET_X_LPARAM(lparam.0 as u32),
-                    y: GET_Y_LPARAM(lparam.0 as u32),
-                },
-            ),
-            _ => DefWindowProcW(hwnd, message, wparam, lparam),
         }
+        DefWindowProcW(hwnd, message, wparam, lparam)
     }
 
     pub fn start(&self) {
         let mut message = MSG::default();
-
         unsafe {
             while GetMessageW(&mut message, self.handle, 0, 0).into() {
                 TranslateMessage(&message);
@@ -155,7 +204,7 @@ impl Window {
     }
 }
 
-unsafe impl HasRawWindowHandle for Window {
+unsafe impl<T: Application> HasRawWindowHandle for Window<T> {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let mut hdl = Win32Handle::empty();
         hdl.hinstance = self.instance.0 as *mut c_void;

@@ -1,5 +1,8 @@
 use crate::window::Window;
 
+use crate::window::Application;
+
+#[derive(Debug)]
 pub struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -10,7 +13,7 @@ pub struct State {
 
 impl State {
     // Creating some of the wgpu types requires async code
-    pub async fn new(window: &Window) -> Self {
+    pub async fn new<T: Application>(window: &Window<T>) -> Self {
         let size = window.get_size().unwrap();
         let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(window) };
@@ -54,7 +57,12 @@ impl State {
     }
 
     pub fn resize(&mut self, new_size: (u32, u32)) {
-        todo!()
+        if (new_size.0 > 0) & (new_size.1 > 0) {
+            self.size = new_size;
+            self.config.width = new_size.0;
+            self.config.height = new_size.1;
+            self.surface.configure(&self.device, &self.config)
+        }
     }
 
     pub fn input(&mut self) -> bool {
