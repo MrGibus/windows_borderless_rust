@@ -89,11 +89,44 @@ impl Window {
         Ok(window)
     }
 
-    // fn wnd_proc(
-    //     &mut self,
-    //
-    //
-    // )
+    fn wnd_proc(
+        &mut self,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> Option<LRESULT> {
+        match message {
+            WM_CREATE => unsafe {
+                let margins = MARGINS {
+                    cxLeftWidth: 1,
+                    cxRightWidth: 1,
+                    cyTopHeight: 1,
+                    cyBottomHeight: 1,
+                };
+                DwmExtendFrameIntoClientArea(self.handle, &margins).unwrap();
+            }
+            WM_PAINT => unsafe {
+                ValidateRect(self.handle, std::ptr::null());
+            }
+            WM_NCCALCSIZE => {
+                // Stop this msg passing to the default procedure as it screws up borderless
+                return Some(LRESULT(0))
+            }
+            // Non-client hit test
+            WM_NCHITTEST => {
+                return Some(
+                    Region::hit_test(
+                        self.handle,
+                        POINT {
+                            x: GET_X_LPARAM(lparam.0 as u32),
+                            y: GET_Y_LPARAM(lparam.0 as u32),
+                        },
+                ))
+            }
+            _ => {}
+        }
+        None
+    }
 
     // The external window system procedure.
     // Handles the window pointer and passes on the message to the wnd_proc method
@@ -103,56 +136,31 @@ impl Window {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        // if message == WM_NCCREATE {
-        //
-        // }
+        // If the message is a creation message then set the pointer,
+        // otherwise get the pointer and pass along
 
-        
-        match message {
-            // First creation message.
-            WM_NCCREATE => {
-                // Set Window pointer
-                let cs = lparam.0 as *const CREATESTRUCTW;
-                let this = (*cs).lpCreateParams as *mut Self;
-                (*this).handle = hwnd;
-                if hwnd.is_invalid() {
-                    panic!("Cannot recover: Window handle is invalid");
-                }
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, this as _);
+        let l_result  = if message == WM_NCCREATE {
+            // Set Window pointer
+            let cs = lparam.0 as *const CREATESTRUCTW;
+            let this = (*cs).lpCreateParams as *mut Self;
+            (*this).handle = hwnd;
+            if hwnd.is_invalid() {
+                panic!("Cannot recover: Window handle is invalid");
+            }
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, this as _);
+            None
+        }
+        else {
+            let this = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self;
+            if let Some(this) = this.as_mut(){
+                this.wnd_proc(message, wparam, lparam)
+            } else {
+                None
+            }
+        };
 
-                // Enable drawing over the non-client area for borderless window
-                let margins = MARGINS {
-                    cxLeftWidth: 1,
-                    cxRightWidth: 1,
-                    cyTopHeight: 1,
-                    cyBottomHeight: 1,
-                };
-                DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
-            }
-            WM_PAINT => {
-                ValidateRect(hwnd, std::ptr::null());
-            }
-            WM_NCCALCSIZE => {
-                // Stop this msg passing to the default procedure as it screws up borderless
-                return LRESULT(0)
-            }
-            // Non-client hit test
-            WM_NCHITTEST => {
-                return Region::hit_test(
-                    hwnd,
-                    POINT {
-                        x: GET_X_LPARAM(lparam.0 as u32),
-                        y: GET_Y_LPARAM(lparam.0 as u32),
-                    },
-                );
-            }
-            WM_KEYDOWN => {
-                let this = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self;
-                if let Some(this) = this.as_mut(){
-                    this.test_correct();
-                }
-            }
-            _ => {}
+        if let Some(l) = l_result {
+            return l
         }
 
         DefWindowProcW(hwnd, message, wparam, lparam)
