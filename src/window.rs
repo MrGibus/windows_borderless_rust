@@ -15,6 +15,7 @@ use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 use std::ffi::c_void;
 use std::sync::Once;
 use windows::Win32::Foundation::LRESULT;
+use crate::State;
 
 /// Default background colour
 const BGCOLOUR: u32 = rgb(52, 55, 60);
@@ -22,9 +23,13 @@ const BGCOLOUR: u32 = rgb(52, 55, 60);
 /// Required until I figure out how to handle multiple windows
 static REGISTER_WINDOW_CLASS: Once = Once::new();
 
+
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct Window {
+    // Raw pointer to the WGPU struct
+    data: *mut State,
     instance: HINSTANCE,
     handle: HWND,
 }
@@ -55,6 +60,7 @@ impl Window {
         });
 
         let mut window = Box::new(Self {
+            data: std::ptr::null_mut(),
             instance: hinstance,
             handle: HWND(0),
         });
@@ -89,6 +95,18 @@ impl Window {
         Ok(window)
     }
 
+    pub fn set_state(&mut self, state: &mut State){
+        self.data = state
+    }
+
+    pub fn get_size(&self) -> Result<(u32, u32)> {
+        let rect = get_window_rect(self.handle)?;
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+
+        Ok((width as u32, height as u32))
+    }
+
     fn wnd_proc(
         &mut self,
         message: u32,
@@ -104,17 +122,36 @@ impl Window {
                     cyBottomHeight: 1,
                 };
                 DwmExtendFrameIntoClientArea(self.handle, &margins).unwrap();
+                None
+            }
+            WM_DESTROY => {
+                unsafe { PostQuitMessage(0) };
+                Some(LRESULT(0))
             }
             WM_PAINT => unsafe {
                 ValidateRect(self.handle, std::ptr::null());
+
+                if let Some(state) = self.data.as_mut(){
+                    state.render().unwrap();
+                }
+
+                None
+            }
+            WM_SIZE | WM_SIZING => unsafe {
+                let size = self.get_size().unwrap();
+
+                if let Some(state) = self.data.as_mut(){
+                    state.resize(size);
+                }
+                None
             }
             WM_NCCALCSIZE => {
                 // Stop this msg passing to the default procedure as it screws up borderless
-                return Some(LRESULT(0))
+                Some(LRESULT(0))
             }
             // Non-client hit test
             WM_NCHITTEST => {
-                return Some(
+                Some(
                     Region::hit_test(
                         self.handle,
                         POINT {
@@ -123,9 +160,8 @@ impl Window {
                         },
                 ))
             }
-            _ => {}
+            _ => {None}
         }
-        None
     }
 
     // The external window system procedure.
