@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use windows::core::PCWSTR;
 
 /// Converts rgb values into a single unsigned 32bit integer

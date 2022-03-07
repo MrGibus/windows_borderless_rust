@@ -1,6 +1,6 @@
-use crate::window::Window;
+#![allow(dead_code)]
 
-use crate::window::Application;
+use crate::window::Window;
 
 #[derive(Debug)]
 pub struct State {
@@ -13,7 +13,7 @@ pub struct State {
 
 impl State {
     // Creating some of the wgpu types requires async code
-    pub async fn new<T: Application>(window: &Window<T>) -> Self {
+    pub async fn new(window: &Window) -> Self {
         let size = window.get_size().unwrap();
         let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(window) };

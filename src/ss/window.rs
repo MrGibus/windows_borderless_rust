@@ -10,6 +10,7 @@ use windows::{
 };
 
 use crate::utils::{rgb, str_to_pcwstr, GET_X_LPARAM, GET_Y_LPARAM};
+use crate::render::State;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 use std::ffi::c_void;
@@ -22,22 +23,33 @@ const BGCOLOUR: u32 = rgb(52, 55, 60);
 /// Required until I figure out how to handle multiple windows
 static REGISTER_WINDOW_CLASS: Once = Once::new();
 
-#[derive(Debug)]
-#[repr(C)]
-pub struct Window {
-    instance: HINSTANCE,
-    handle: HWND,
+pub enum Event {
+    Resize,
+    KeyDown,
+    Paint,
 }
 
-impl Window {
-    pub fn test_correct(&self){
-        println!("I'm a little window, short and stdout. \
-        This is my handle: {:?} this is my instance {:?}",
-                 &self.handle, &self.instance)
+pub trait Application {
+
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct Window<T: Application> {
+    application: T,
+    instance: HINSTANCE,
+    handle: HWND,
+    pub info: Option<String>
+}
+
+impl <T: Application> Window<T> {
+    fn check_reference(&self) -> bool{
+        true
     }
 
-    pub fn new(title: &str, window_class_name: &str) -> Result<Box<Self>> {
+    pub fn new(title: &str, window_class_name: &str, app: T) -> Result<Box<Self>> {
         let hinstance = unsafe { GetModuleHandleW(None).ok() }?;
+        // println!("hinstance = {}", &hinstance.0);
 
         REGISTER_WINDOW_CLASS.call_once(|| {
             let wc = WNDCLASSEXW {
@@ -48,16 +60,20 @@ impl Window {
                 hCursor: unsafe { LoadCursorW(None, IDC_ARROW).ok().unwrap() }, // A handle to the class cursor
                 hbrBackground: unsafe { CreateSolidBrush(BGCOLOUR).ok().unwrap() },
                 lpszClassName: str_to_pcwstr(window_class_name),
-                lpfnWndProc: Some(Self::wnd_proc_sys), // A pointer to the window procedure - defined below
+                lpfnWndProc: Some(Self::wndproc), // A pointer to the window procedure - defined below
                 ..Default::default()
             };
             assert_ne!(unsafe { RegisterClassExW(&wc) }, 0);
         });
 
         let mut window = Box::new(Self {
+            application: app,
             instance: hinstance,
             handle: HWND(0),
+            info: None
         });
+
+        // println!("RawPtr: {}", &mut window as *mut c_void as u32);
 
         let hwnd = unsafe {
             CreateWindowExW(
@@ -73,7 +89,7 @@ impl Window {
                 None,
                 hinstance,
                 // mutable reference to raw pointer where we let the compiler work out the type '_'
-                // we then cast this raw pointer to *mut c_void type `_` as is required
+                // we then cast this raw pointer to *const c_void type `_` as is required
                 // &mut window as *mut _ as *mut c_void,
                 window.as_mut() as *mut _ as _,
             )
@@ -84,77 +100,78 @@ impl Window {
             return Err(unsafe {
                 Error::new(GetLastError().into(), "Failed to create window".into())
             });
+        } else {
+            window.handle = hwnd;
         }
 
         Ok(window)
     }
 
-    // fn wnd_proc(
-    //     &mut self,
-    //
-    //
-    // )
-
-    // The external window system procedure.
-    // Handles the window pointer and passes on the message to the wnd_proc method
-    unsafe extern "system" fn wnd_proc_sys(
+    unsafe fn event_handler(
+        &mut self,
         hwnd: HWND,
         message: u32,
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        // if message == WM_NCCREATE {
-        //
-        // }
-
-        
-        match message {
-            // First creation message.
-            WM_NCCREATE => {
-                // Set Window pointer
-                let cs = lparam.0 as *const CREATESTRUCTW;
-                let this = (*cs).lpCreateParams as *mut Self;
-                (*this).handle = hwnd;
-                if hwnd.is_invalid() {
-                    panic!("Cannot recover: Window handle is invalid");
+        match message as u32 {
+                WM_NCCALCSIZE => {
+                    // Stop this msg passing to the default procedure as it screws up borderless
+                    LRESULT(0)
                 }
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, this as _);
-
-                // Enable drawing over the non-client area for borderless window
-                let margins = MARGINS {
-                    cxLeftWidth: 1,
-                    cxRightWidth: 1,
-                    cyTopHeight: 1,
-                    cyBottomHeight: 1,
-                };
-                DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
-            }
-            WM_PAINT => {
-                ValidateRect(hwnd, std::ptr::null());
-            }
-            WM_NCCALCSIZE => {
-                // Stop this msg passing to the default procedure as it screws up borderless
-                return LRESULT(0)
-            }
-            // Non-client hit test
-            WM_NCHITTEST => {
-                return Region::hit_test(
+                WM_PAINT => {
+                    // println!("WM_PAINT");
+                    ValidateRect(hwnd, std::ptr::null());
+                    LRESULT(0)
+                }
+                WM_NCHITTEST => Region::hit_test(
                     hwnd,
                     POINT {
                         x: GET_X_LPARAM(lparam.0 as u32),
                         y: GET_Y_LPARAM(lparam.0 as u32),
                     },
-                );
-            }
-            WM_KEYDOWN => {
-                let this = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self;
-                if let Some(this) = this.as_mut(){
-                    this.test_correct();
+                ),
+                WM_DESTROY => {
+                    println!("WM_DESTROY");
+                    PostQuitMessage(0);
+                    LRESULT(0)
                 }
-            }
-            _ => {}
+                // WM_SIZE => {
+                //     println!("WM_SIZE");
+                //     PostMessageW(hwnd, WM_SIZE, wparam, lparam);
+                //     LRESULT(0)
+                // }
+                _ => DefWindowProcW(hwnd, message, wparam, lparam)
         }
+    }
 
+    unsafe extern "system" fn wndproc(
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        // println!("Message: {}", message as u32);
+        if message as u32 == WM_NCCREATE | WM_CREATE {
+            let margins = MARGINS {
+                cxLeftWidth: 1,
+                cxRightWidth: 1,
+                cyTopHeight: 1,
+                cyBottomHeight: 1,
+            };
+            DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
+            let cs = lparam.0 as *const CREATESTRUCTW;
+            let this = (*cs).lpCreateParams as *mut Self;
+            // assert_ne!(this, 0)
+            (*this).handle = hwnd;
+
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, this as _);
+        } else {
+            let this = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self;
+            if let Some(this) = this.as_mut(){
+                return this.event_handler(hwnd, message, wparam, lparam);
+            }
+        }
         DefWindowProcW(hwnd, message, wparam, lparam)
     }
 
@@ -167,9 +184,27 @@ impl Window {
             }
         }
     }
+
+    #[inline]
+    pub fn hwnd(&self) -> HWND {
+        self.handle
+    }
+
+    #[inline]
+    pub fn hinstance(&self) -> HINSTANCE {
+        self.instance
+    }
+
+    pub fn get_size(&self) -> Result<(u32, u32)> {
+        let rect = get_window_rect(self.handle)?;
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+
+        Ok((width as u32, height as u32))
+    }
 }
 
-unsafe impl HasRawWindowHandle for Window {
+unsafe impl<T: Application> HasRawWindowHandle for Window<T> {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let mut hdl = Win32Handle::empty();
         hdl.hinstance = self.instance.0 as *mut c_void;
@@ -179,7 +214,7 @@ unsafe impl HasRawWindowHandle for Window {
     }
 }
 
-pub(crate) fn get_titlebar_height() -> i32 {
+fn get_titlebar_height() -> i32 {
     unsafe {
         GetThemeSysSize(0, SM_CYSIZE.0 as i32) + GetThemeSysSize(0, SM_CXPADDEDBORDER.0 as i32) * 2
     }
