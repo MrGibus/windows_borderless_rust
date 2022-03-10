@@ -10,20 +10,20 @@ use windows::{
 };
 
 use crate::utils::{rgb, str_to_pcwstr, GET_X_LPARAM, GET_Y_LPARAM};
+use crate::input::KeyCode;
 
+// use crate::State;
+use crate::render::{State, Input};
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 use std::ffi::c_void;
 use std::sync::Once;
 use windows::Win32::Foundation::LRESULT;
-use crate::State;
 
 /// Default background colour
 const BGCOLOUR: u32 = rgb(52, 55, 60);
 
 /// Required until I figure out how to handle multiple windows
 static REGISTER_WINDOW_CLASS: Once = Once::new();
-
-
 
 #[derive(Debug)]
 #[repr(C)]
@@ -35,10 +35,12 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn test_correct(&self){
-        println!("I'm a little window, short and stdout. \
+    pub fn test_correct(&self) {
+        println!(
+            "I'm a little window, short and stdout. \
         This is my handle: {:?} this is my instance {:?}",
-                 &self.handle, &self.instance)
+            &self.handle, &self.instance
+        )
     }
 
     pub fn new(title: &str, window_class_name: &str) -> Result<Box<Self>> {
@@ -95,7 +97,7 @@ impl Window {
         Ok(window)
     }
 
-    pub fn set_state(&mut self, state: &mut State){
+    pub fn set_state(&mut self, state: &mut State) {
         self.data = state
     }
 
@@ -107,12 +109,7 @@ impl Window {
         Ok((width as u32, height as u32))
     }
 
-    fn wnd_proc(
-        &mut self,
-        message: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> Option<LRESULT> {
+    fn wnd_proc(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
         match message {
             WM_CREATE => unsafe {
                 let margins = MARGINS {
@@ -126,41 +123,80 @@ impl Window {
             }
             WM_DESTROY => {
                 unsafe { PostQuitMessage(0) };
-                Some(LRESULT(0))
+                None
             }
             WM_PAINT => unsafe {
                 ValidateRect(self.handle, std::ptr::null());
 
-                if let Some(state) = self.data.as_mut(){
+                if let Some(state) = self.data.as_mut() {
                     state.render().unwrap();
                 }
 
                 None
-            }
+            },
             WM_SIZE | WM_SIZING => unsafe {
                 let size = self.get_size().unwrap();
 
-                if let Some(state) = self.data.as_mut(){
+                if let Some(state) = self.data.as_mut() {
                     state.resize(size);
                 }
                 None
-            }
+            },
             WM_NCCALCSIZE => {
                 // Stop this msg passing to the default procedure as it screws up borderless
                 Some(LRESULT(0))
             }
             // Non-client hit test
-            WM_NCHITTEST => {
-                Some(
-                    Region::hit_test(
-                        self.handle,
-                        POINT {
-                            x: GET_X_LPARAM(lparam.0 as u32),
-                            y: GET_Y_LPARAM(lparam.0 as u32),
-                        },
-                ))
+            WM_NCHITTEST => Some(Region::hit_test(
+                self.handle,
+                POINT {
+                    x: GET_X_LPARAM(lparam.0 as u32),
+                    y: GET_Y_LPARAM(lparam.0 as u32),
+                },
+            )),
+            WM_LBUTTONDOWN => {
+                // println!("WM_LBUTTONDOWN {:?}, {:?}", wparam, lparam);
+                let x = GET_X_LPARAM(lparam.0 as u32);
+                let y = GET_Y_LPARAM(lparam.0 as u32);
+                println!("Mouse Clicked at x: {:?}, y: {:?}", x, y);
+                unsafe {
+                    if let Some(state) = self.data.as_mut(){
+                        state.input(Input::LeftClick((x as u32, y as u32)));
+                    }
+                }
+                None
             }
-            _ => {None}
+            WM_MOUSEMOVE => {
+                let x = GET_X_LPARAM(lparam.0 as u32);
+                let y = GET_Y_LPARAM(lparam.0 as u32);
+                // println!("Mouse Moved x: {:?}, y: {:?}", x, y);
+                unsafe {
+                    if let Some(state) = self.data.as_mut(){
+                        state.input(Input::MouseMove((x as u32, y as u32)));
+                    }
+                }
+                None
+            }
+            WM_KEYDOWN => {
+                // println!("WM_KEYDOWN{:?}", wparam);
+                // Check if Q is pressed
+                if let Some(key) = KeyCode::from_raw(wparam.0) {
+                    // println!("key = {:?}", key);
+                    if key == KeyCode::Escape {
+                        unsafe { PostQuitMessage(0) };
+                        return  Some(LRESULT(0));
+                    }
+                    else {
+                        unsafe {
+                            if let Some(state) = self.data.as_mut(){
+                                state.input(Input::KeyDown(key));
+                            }
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
         }
     }
 
@@ -175,7 +211,7 @@ impl Window {
         // If the message is a creation message then set the pointer,
         // otherwise get the pointer and pass along
 
-        let l_result  = if message == WM_NCCREATE {
+        let l_result = if message == WM_NCCREATE {
             // Set Window pointer
             let cs = lparam.0 as *const CREATESTRUCTW;
             let this = (*cs).lpCreateParams as *mut Self;
@@ -185,10 +221,9 @@ impl Window {
             }
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, this as _);
             None
-        }
-        else {
+        } else {
             let this = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self;
-            if let Some(this) = this.as_mut(){
+            if let Some(this) = this.as_mut() {
                 this.wnd_proc(message, wparam, lparam)
             } else {
                 None
@@ -196,7 +231,7 @@ impl Window {
         };
 
         if let Some(l) = l_result {
-            return l
+            return l;
         }
 
         DefWindowProcW(hwnd, message, wparam, lparam)
@@ -205,7 +240,8 @@ impl Window {
     pub fn start(&self) {
         let mut message = MSG::default();
         unsafe {
-            while GetMessageW(&mut message, self.handle, 0, 0).into() {
+            // Pass null because passing the handle will not pick up all messages
+            while GetMessageW(&mut message, HWND(0), 0, 0).into() {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
             }

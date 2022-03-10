@@ -1,11 +1,8 @@
-
-
-pub enum Event{
+pub enum Event {
     Paint,
     Resize,
 }
 
-pub trait Application{
+pub trait Application {
     fn event_handler(event: Event);
 }
-

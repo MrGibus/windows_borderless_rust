@@ -1,7 +1,16 @@
 #![allow(dead_code)]
 
-use wgpu::include_wgsl;
 use crate::window::Window;
+use crate::input::KeyCode;
+use wgpu::include_wgsl;
+
+#[derive(Debug)]
+pub enum Input{
+    MouseMove((u32, u32)),
+    LeftClick((u32, u32)),
+    RightClick((u32, u32)),
+    KeyDown(KeyCode),
+}
 
 #[derive(Debug)]
 pub struct State {
@@ -11,6 +20,7 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     size: (u32, u32),
     render_pipeline: wgpu::RenderPipeline,
+    clear_color: wgpu::Color,
 }
 
 impl State {
@@ -51,49 +61,54 @@ impl State {
 
         let shader = device.create_shader_module(&include_wgsl!("shaders/shader.wgsl"));
 
-        let render_pipline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
+        let render_pipline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[],
                 push_constant_ranges: &[],
-            }
-        );
-
-        let render_pipeline = device.create_render_pipeline(
-            &wgpu::RenderPipelineDescriptor{
-                label: Some("Render Pipeline"),
-                layout: Some(&render_pipline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState{
-                    module: &shader,
-                    entry_point: "fs_main",
-                    targets: &[wgpu::ColorTargetState {
-                        format: config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }]
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
             });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                }],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
+        let clear_color = wgpu::Color{
+            r: 0.04,
+            g: 0.045,
+            b: 0.05,
+            a: 1.0,
+        };
 
         Self {
             surface,
@@ -102,6 +117,8 @@ impl State {
             config,
             size,
             render_pipeline,
+            clear_color,
+
         }
     }
 
@@ -114,7 +131,21 @@ impl State {
         }
     }
 
-    pub fn input(&mut self) -> bool {
+    pub fn input(&mut self, input: Input) -> bool {
+        println!("Input received: {:?}", input);
+        match input {
+            Input::MouseMove((x, y)) => {
+                self.clear_color = wgpu::Color {
+                    r: x as f64 / self.size.0 as f64,
+                    g: y as f64 / self.size.1 as f64,
+                    b: 1.0,
+                    a: 1.0,
+                };
+            }
+            _ => ()
+        }
+
+        self.render().unwrap();
         false
     }
 
@@ -140,12 +171,7 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.04,
-                            g: 0.045,
-                            b: 0.05,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: true,
                     },
                 }],

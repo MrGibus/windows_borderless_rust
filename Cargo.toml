@@ -4,10 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-raw-window-handle = "0.4.2"  # Required for wgpu surface
-wgpu = "0.12"
-pollster = "0.2"
+wgpu = "0.12"  # The graphics backend
+raw-window-handle = "0.4.2"  # Implement on our window struct so that wgpu can find a surface
+pollster = "0.2"  # Allows us to use async functions
+env_logger = "0.9.0"  # Allows us to log wgpu's errors
+log = "0.4"
 
+
+# Windows API bindings
 [dependencies.windows]
 version = "0.33.0"
 features = [
