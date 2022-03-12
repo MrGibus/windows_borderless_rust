@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 extern crate raw_window_handle;
 extern crate windows;
 
@@ -6,6 +8,7 @@ mod render;
 mod utils;
 mod window;
 mod input;
+mod winapi_utils;
 
 use crate::render::State;
 use crate::window::Window;

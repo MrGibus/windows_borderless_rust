@@ -55,7 +55,7 @@ pub enum KeyCode {
     J = 74,
     JunjaMode = 23,
     K = 75,
-    KeyCode = 65535,
+    // KeyCode = 65535,  // Not sure what this is
     L = 76,
     LaunchApplication1 = 182,
     LaunchApplication2 = 183,
@@ -185,7 +185,7 @@ impl KeyCode {
             74 => Some(Self::J),
             23 => Some(Self::JunjaMode),
             75 => Some(Self::K),
-            65535 => Some(Self::KeyCode),
+            // 65535 => Some(Self::KeyCode),
             76 => Some(Self::L),
             182 => Some(Self::LaunchApplication1),
             183 => Some(Self::LaunchApplication2),

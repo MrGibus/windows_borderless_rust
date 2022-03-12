@@ -1,29 +1,21 @@
 use windows::{
     core::*,
     Win32::Foundation::*,
-    Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea,
-    Win32::Graphics::Gdi::ValidateRect,
-    Win32::Graphics::Gdi::*,
-    Win32::System::LibraryLoader::GetModuleHandleW,
-    Win32::UI::Controls::{GetThemeSysSize, MARGINS},
     Win32::UI::WindowsAndMessaging::*,
 };
 
 use crate::utils::{rgb, str_to_pcwstr, GET_X_LPARAM, GET_Y_LPARAM};
 use crate::input::KeyCode;
+use crate::winapi_utils::*;
 
 // use crate::State;
 use crate::render::{State, Input};
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 use std::ffi::c_void;
-use std::sync::Once;
 use windows::Win32::Foundation::LRESULT;
 
 /// Default background colour
 const BGCOLOUR: u32 = rgb(52, 55, 60);
-
-/// Required until I figure out how to handle multiple windows
-static REGISTER_WINDOW_CLASS: Once = Once::new();
 
 #[derive(Debug)]
 #[repr(C)]
@@ -35,7 +27,8 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn test_correct(&self) {
+    #[allow(dead_code)]
+    fn test_correct(&self) {
         println!(
             "I'm a little window, short and stdout. \
         This is my handle: {:?} this is my instance {:?}",
@@ -44,22 +37,22 @@ impl Window {
     }
 
     pub fn new(title: &str, window_class_name: &str) -> Result<Box<Self>> {
-        let hinstance = unsafe { GetModuleHandleW(None).ok() }?;
+        let hinstance = get_current_module_handle()?;
 
-        REGISTER_WINDOW_CLASS.call_once(|| {
-            let wc = WNDCLASSEXW {
-                cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-                hInstance: hinstance, // A handle to the process that contains the window procedure
-                style: CS_HREDRAW | CS_VREDRAW, // Styling
-                hIcon: unsafe { LoadIconW(None, IDI_EXCLAMATION) },
-                hCursor: unsafe { LoadCursorW(None, IDC_ARROW).ok().unwrap() }, // A handle to the class cursor
-                hbrBackground: unsafe { CreateSolidBrush(BGCOLOUR).ok().unwrap() },
-                lpszClassName: str_to_pcwstr(window_class_name),
-                lpfnWndProc: Some(Self::wnd_proc_sys), // A pointer to the window procedure - defined below
-                ..Default::default()
-            };
-            assert_ne!(unsafe { RegisterClassExW(&wc) }, 0);
-        });
+        let wc = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            hInstance: hinstance, // A handle to the process that contains the window procedure
+            style: CS_HREDRAW | CS_VREDRAW | CS_OWNDC, // Styling (Nothing to do with aesthetics)
+            hIcon: warning_icon()?,
+            hCursor: default_cursor()?, // A handle to the class cursor
+            hbrBackground: solid_brush(BGCOLOUR)?,
+            lpszClassName: str_to_pcwstr(window_class_name),
+
+            lpfnWndProc: Some(Self::wnd_proc_sys), // A pointer to the window procedure - defined below
+            ..Default::default()
+        };
+
+        let _atom = register_window_class(&wc)?;
 
         let mut window = Box::new(Self {
             data: std::ptr::null_mut(),
@@ -67,32 +60,19 @@ impl Window {
             handle: HWND(0),
         });
 
-        let hwnd = unsafe {
-            CreateWindowExW(
-                Default::default(),
-                window_class_name,
-                title,
-                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                None,
-                None,
-                hinstance,
-                // mutable reference to raw pointer where we let the compiler work out the type '_'
-                // we then cast this raw pointer to *mut c_void type `_` as is required
-                // &mut window as *mut _ as *mut c_void,
-                window.as_mut() as *mut _ as _,
-            )
-            .ok()?
-        };
-
-        if hwnd.is_invalid() {
-            return Err(unsafe {
-                Error::new(GetLastError().into(), "Failed to create window".into())
-            });
-        }
+        let _hwnd = create_window(
+            Default::default(),
+            window_class_name,
+            title,
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            [CW_USEDEFAULT; 2],
+            [CW_USEDEFAULT; 2],
+            hinstance,
+            // mutable reference to raw pointer where we let the compiler work out the type '_'
+            // we then cast this raw pointer to *mut c_void type `_` as is required
+            // &mut window as *mut _ as *mut c_void,
+            window.as_mut() as *mut _ as _,
+        )?;
 
         Ok(window)
     }
@@ -111,22 +91,19 @@ impl Window {
 
     fn wnd_proc(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
         match message {
-            WM_CREATE => unsafe {
-                let margins = MARGINS {
-                    cxLeftWidth: 1,
-                    cxRightWidth: 1,
-                    cyTopHeight: 1,
-                    cyBottomHeight: 1,
-                };
-                DwmExtendFrameIntoClientArea(self.handle, &margins).unwrap();
+            WM_CREATE => {
+                extend_frame_into_client_area(
+                    self.handle,
+                    &WindowStyle::Borderless
+                ).unwrap();
                 None
             }
             WM_DESTROY => {
-                unsafe { PostQuitMessage(0) };
+                post_quit_message(0);
                 None
             }
             WM_PAINT => unsafe {
-                ValidateRect(self.handle, std::ptr::null());
+                validate_rect(self.handle).unwrap();
 
                 if let Some(state) = self.data.as_mut() {
                     state.render().unwrap();
@@ -183,7 +160,7 @@ impl Window {
                 if let Some(key) = KeyCode::from_raw(wparam.0) {
                     // println!("key = {:?}", key);
                     if key == KeyCode::Escape {
-                        unsafe { PostQuitMessage(0) };
+                        post_quit_message(0);
                         return  Some(LRESULT(0));
                     }
                     else {
@@ -240,8 +217,13 @@ impl Window {
     pub fn start(&self) {
         let mut message = MSG::default();
         unsafe {
-            // Pass null because passing the handle will not pick up all messages
+            // Note: Pass null because passing the window handle will not pick up all messages
             while GetMessageW(&mut message, HWND(0), 0, 0).into() {
+                if message.message == WM_QUIT {
+                    // Where we receive a quit message we take the wParam and use that as an exit
+                    // code for our application
+                    std::process::exit(message.wParam.0 as i32);
+                }
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
@@ -259,26 +241,6 @@ unsafe impl HasRawWindowHandle for Window {
     }
 }
 
-pub(crate) fn get_titlebar_height() -> i32 {
-    unsafe {
-        GetThemeSysSize(0, SM_CYSIZE.0 as i32) + GetThemeSysSize(0, SM_CXPADDEDBORDER.0 as i32) * 2
-    }
-}
-
-/// Gets the window area for the purposes of extending
-/// the client area into the window area and thus removing the titlebar
-fn get_window_rect(hwnd: HWND) -> Result<RECT> {
-    let mut rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    unsafe { GetWindowRect(hwnd, &mut rect).ok()? };
-
-    Ok(rect)
-}
-
 /// an enum defining the four corners of a window
 #[rustfmt::skip]
 pub(crate) enum Region {
@@ -291,12 +253,7 @@ pub(crate) enum Region {
 impl Region {
     /// A hit check for the location of the cursor and unification of the values
     pub(crate) fn hit_test(hwnd: HWND, cursor: POINT) -> LRESULT {
-        let border = unsafe {
-            POINT {
-                x: GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
-                y: GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
-            }
-        };
+        let border = get_border();
 
         let rect = get_window_rect(hwnd).unwrap();
 
