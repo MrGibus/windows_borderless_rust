@@ -157,17 +157,17 @@ impl State {
 
     pub fn input(&mut self, input: Input) -> bool {
         println!("Input received: {:?}", input);
-        match input {
-            Input::MouseMove((x, y)) => {
-                self.clear_color = wgpu::Color {
-                    r: x as f64 / self.size.0 as f64,
-                    g: y as f64 / self.size.1 as f64,
-                    b: 1.0,
-                    a: 1.0,
-                };
-            }
-            _ => ()
-        }
+        // match input {
+        //     Input::MouseMove((x, y)) => {
+        //         self.clear_color = wgpu::Color {
+        //             r: x as f64 / self.size.0 as f64,
+        //             g: y as f64 / self.size.1 as f64,
+        //             b: 1.0,
+        //             a: 1.0,
+        //         };
+        //     }
+        //     _ => ()
+        // }
 
         self.render().unwrap();
         false

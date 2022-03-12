@@ -19,10 +19,10 @@ use windows::Win32::{
 };
 
 const BORDERLESS_MARGINS: MARGINS = MARGINS {
-    cxLeftWidth: -1,
-    cxRightWidth: -1,
-    cyTopHeight: -1,
-    cyBottomHeight: -1,
+    cxLeftWidth: 1,
+    cxRightWidth: 1,
+    cyTopHeight: 1,
+    cyBottomHeight: 1,
 };
 
 const FLAT_MARGINS: MARGINS = MARGINS {
