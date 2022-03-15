@@ -1,7 +1,18 @@
-/// keyboard codes to keys
-/// FIXME: just copied from here, but some keys not working
-/// Some sort of Union-like bitwise-OR functionality might be intended
-/// https://docs.microsoft.com/en-us/dotnet/api/system.windows.forms.keys?view=net-5.0
+#![allow(dead_code)]
+
+//! keyboard codes to keys
+//! FIXME: just copied from here, but some keys not working
+//! Some sort of Union-like bitwise-OR functionality might be intended
+//! https://docs.microsoft.com/en-us/dotnet/api/system.windows.forms.keys?view=net-5.0
+
+#[derive(Debug)]
+pub enum Input {
+    MouseMove((u32, u32)),
+    LeftClick((u32, u32)),
+    RightClick((u32, u32)),
+    KeyDown(KeyCode),
+}
+
 #[derive(Eq, PartialEq, Debug)]
 pub enum KeyCode {
     A = 65,

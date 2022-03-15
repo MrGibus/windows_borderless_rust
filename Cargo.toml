@@ -11,6 +11,8 @@ env_logger = "0.9.0"  # Allows us to log wgpu's errors
 log = "0.4"
 # Needed to convert structs to u8 slices to place in gpu buffers
 bytemuck = { version = "1.8.0", features = [ "derive" ] }
+cgmath = "0.18.0"
+image = "0.24.1"
 
 # Windows API bindings
 [dependencies.windows]

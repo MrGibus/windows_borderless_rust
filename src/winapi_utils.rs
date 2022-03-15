@@ -3,9 +3,7 @@
 //! documentation and windows-rs docs.
 
 use std::ffi::c_void;
-use windows::{
-    core::*,
-};
+use windows::core::*;
 
 use windows::Win32::{
     Foundation::*,
@@ -37,7 +35,7 @@ const FLAT_MARGINS: MARGINS = MARGINS {
 /// https://docs.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandlew
 /// https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/System/LibraryLoader/fn.GetModuleHandleW.html
 /// Retrieves a module handle for the current module.
-pub fn get_current_module_handle() -> Result<HINSTANCE>{
+pub fn get_current_module_handle() -> Result<HINSTANCE> {
     // In a multi-threaded application this could be dangerous and cause a race condition.
     // "If this parameter is NULL, GetModuleHandle returns a handle to the file used to create
     // the calling process (.exe file)."
@@ -65,7 +63,7 @@ pub fn default_app_icon() -> Result<HICON> {
 pub fn warning_icon() -> Result<HICON> {
     // simple wrapper to check if handle is null.
     // removes the possibility of incorrectly typing icon name
-    let hicon = unsafe { LoadIconW(None, IDI_EXCLAMATION).ok()}?;
+    let hicon = unsafe { LoadIconW(None, IDI_EXCLAMATION).ok() }?;
     Ok(hicon)
 }
 
@@ -77,26 +75,24 @@ pub fn default_cursor() -> Result<HCURSOR> {
     // simple wrapper to check if handle is null.
     // removes the possibility of incorrectly typing icon name
     // Other default cursor functionality should be implemented by the use of an enum
-    unsafe { LoadCursorW(None, IDC_ARROW).ok()}
+    unsafe { LoadCursorW(None, IDC_ARROW).ok() }
 }
 
 /// creates a new solid brush given an rgb u32 input
 pub fn solid_brush(rgb: u32) -> Result<HBRUSH> {
-    let hbrush = unsafe { CreateSolidBrush(rgb).ok()}?;
+    let hbrush = unsafe { CreateSolidBrush(rgb).ok() }?;
     Ok(hbrush)
 }
 
 #[inline]
 pub fn get_last_error(message: &str) -> Error {
-    unsafe {Error::new(GetLastError().into(), message.into())}
+    unsafe { Error::new(GetLastError().into(), message.into()) }
 }
 
 /// https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerclassexw
 /// https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/UI/WindowsAndMessaging/fn.RegisterClassExW.html
 pub fn register_window_class(class: &WNDCLASSEXW) -> Result<u16> {
-    let atom = unsafe {
-        RegisterClassExW(class)
-    };
+    let atom = unsafe { RegisterClassExW(class) };
     if atom != 0 {
         Ok(atom)
     } else {
@@ -108,14 +104,14 @@ pub fn register_window_class(class: &WNDCLASSEXW) -> Result<u16> {
 /// https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/UI/WindowsAndMessaging/fn.CreateWindowExW.html
 #[allow(clippy::too_many_arguments)]
 pub fn create_window(
-     dwexstyle: WINDOW_EX_STYLE,
-     class_name: &str,
-     title: &str,
-     dwstyle: WINDOW_STYLE,
-     position: [i32; 2],
-     size: [i32; 2],
-     hinstance: HINSTANCE,
-     lpparam: *const c_void,
+    dwexstyle: WINDOW_EX_STYLE,
+    class_name: &str,
+    title: &str,
+    dwstyle: WINDOW_STYLE,
+    position: [i32; 2],
+    size: [i32; 2],
+    hinstance: HINSTANCE,
+    lpparam: *const c_void,
 ) -> Result<HWND> {
     if hinstance.is_invalid() {
         panic!("Supplied an invalid instance handle to create window");
@@ -137,7 +133,8 @@ pub fn create_window(
             None,
             hinstance,
             lpparam,
-        ).ok()?
+        )
+        .ok()?
     };
 
     if hwnd.is_invalid() {
@@ -171,16 +168,16 @@ pub fn get_titlebar_height() -> i32 {
 /// Function get get the system border width and height
 #[inline]
 pub fn get_border() -> POINT {
-        unsafe {
-            POINT {
-                x: GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
-                y: GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
-            }
+    unsafe {
+        POINT {
+            x: GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
+            y: GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER),
         }
+    }
 }
 
 /// General window style description
-pub enum WindowStyle{
+pub enum WindowStyle {
     /// No titlebar, border is overridden by backend
     Borderless,
     /// No titlebar, no drop shadow on window. Useful for splash screens and windows with transparency
@@ -191,7 +188,7 @@ pub enum WindowStyle{
 /// https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/Graphics/Dwm/fn.DwmExtendFrameIntoClientArea.html
 /// https://docs.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmextendframeintoclientarea
 pub fn extend_frame_into_client_area(handle: HWND, style: &WindowStyle) -> Result<()> {
-    let margins = match style{
+    let margins = match style {
         WindowStyle::FlatBorderless => FLAT_MARGINS,
         WindowStyle::Borderless => BORDERLESS_MARGINS,
     };
@@ -200,7 +197,7 @@ pub fn extend_frame_into_client_area(handle: HWND, style: &WindowStyle) -> Resul
         panic!("Cannot extend frame into client area due to invalid window handle")
     }
 
-    unsafe {DwmExtendFrameIntoClientArea(handle, &margins)}
+    unsafe { DwmExtendFrameIntoClientArea(handle, &margins) }
 }
 
 /// post a quit message with an exit code.
@@ -211,7 +208,7 @@ pub fn extend_frame_into_client_area(handle: HWND, style: &WindowStyle) -> Resul
 /// https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/UI/WindowsAndMessaging/fn.PostQuitMessage.html
 /// https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postquitmessage
 #[inline]
-pub fn post_quit_message(nexitcode: i32){
+pub fn post_quit_message(nexitcode: i32) {
     // MSDN lists no concerns so it's deemed safe
     unsafe { PostQuitMessage(nexitcode) };
 }
@@ -219,11 +216,11 @@ pub fn post_quit_message(nexitcode: i32){
 /// Used to redraw the window
 /// https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-validaterect
 /// https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/Graphics/Gdi/fn.ValidateRect.html
-pub fn validate_rect(handle: HWND) -> Result<()>{
+pub fn validate_rect(handle: HWND) -> Result<()> {
     // the second argument here is lprect: *const RECT which is:
     // A pointer to a RECT structure that contains the client coordinates of the rectangle to be
     // removed from the update region. If this parameter is NULL, the entire client area is removed.
     // We will just leave this as null for now so that the entire window is redrawn
-    unsafe {ValidateRect(handle, std::ptr::null()).ok()?};
+    unsafe { ValidateRect(handle, std::ptr::null()).ok()? };
     Ok(())
 }

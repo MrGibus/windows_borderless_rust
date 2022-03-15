@@ -1,15 +1,9 @@
-use windows::{
-    core::*,
-    Win32::Foundation::*,
-    Win32::UI::WindowsAndMessaging::*,
-};
+use windows::{core::*, Win32::Foundation::*, Win32::UI::WindowsAndMessaging::*};
 
+use crate::input::{Input, KeyCode};
+use crate::render::Engine;
 use crate::utils::{rgb, str_to_pcwstr, GET_X_LPARAM, GET_Y_LPARAM};
-use crate::input::KeyCode;
 use crate::winapi_utils::*;
-
-// use crate::State;
-use crate::render::{State, Input};
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 use std::ffi::c_void;
 use windows::Win32::Foundation::LRESULT;
@@ -21,7 +15,7 @@ const BGCOLOUR: u32 = rgb(52, 55, 60);
 #[repr(C)]
 pub struct Window {
     // Raw pointer to the WGPU struct
-    data: *mut State,
+    engine: *mut Engine,
     instance: HINSTANCE,
     handle: HWND,
 }
@@ -55,7 +49,7 @@ impl Window {
         let _atom = register_window_class(&wc)?;
 
         let mut window = Box::new(Self {
-            data: std::ptr::null_mut(),
+            engine: std::ptr::null_mut(),
             instance: hinstance,
             handle: HWND(0),
         });
@@ -77,8 +71,8 @@ impl Window {
         Ok(window)
     }
 
-    pub fn set_state(&mut self, state: &mut State) {
-        self.data = state
+    pub fn set_engine(&mut self, engine: &mut Engine) {
+        self.engine = engine
     }
 
     pub fn get_size(&self) -> Result<(u32, u32)> {
@@ -92,10 +86,7 @@ impl Window {
     fn wnd_proc(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
         match message {
             WM_CREATE => {
-                extend_frame_into_client_area(
-                    self.handle,
-                    &WindowStyle::Borderless
-                ).unwrap();
+                extend_frame_into_client_area(self.handle, &WindowStyle::Borderless).unwrap();
                 None
             }
             WM_DESTROY => {
@@ -105,7 +96,7 @@ impl Window {
             WM_PAINT => unsafe {
                 validate_rect(self.handle).unwrap();
 
-                if let Some(state) = self.data.as_mut() {
+                if let Some(state) = self.engine.as_mut() {
                     state.render().unwrap();
                 }
 
@@ -114,7 +105,7 @@ impl Window {
             WM_SIZE | WM_SIZING => unsafe {
                 let size = self.get_size().unwrap();
 
-                if let Some(state) = self.data.as_mut() {
+                if let Some(state) = self.engine.as_mut() {
                     state.resize(size);
                 }
                 None
@@ -137,7 +128,7 @@ impl Window {
                 let y = GET_Y_LPARAM(lparam.0 as u32);
                 println!("Mouse Clicked at x: {:?}, y: {:?}", x, y);
                 unsafe {
-                    if let Some(state) = self.data.as_mut(){
+                    if let Some(state) = self.engine.as_mut() {
                         state.input(Input::LeftClick((x as u32, y as u32)));
                     }
                 }
@@ -148,7 +139,7 @@ impl Window {
                 let y = GET_Y_LPARAM(lparam.0 as u32);
                 // println!("Mouse Moved x: {:?}, y: {:?}", x, y);
                 unsafe {
-                    if let Some(state) = self.data.as_mut(){
+                    if let Some(state) = self.engine.as_mut() {
                         state.input(Input::MouseMove((x as u32, y as u32)));
                     }
                 }
@@ -161,11 +152,10 @@ impl Window {
                     // println!("key = {:?}", key);
                     if key == KeyCode::Escape {
                         post_quit_message(0);
-                        return  Some(LRESULT(0));
-                    }
-                    else {
+                        return Some(LRESULT(0));
+                    } else {
                         unsafe {
-                            if let Some(state) = self.data.as_mut(){
+                            if let Some(state) = self.engine.as_mut() {
                                 state.input(Input::KeyDown(key));
                             }
                         }
